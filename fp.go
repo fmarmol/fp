@@ -3,7 +3,6 @@ package fp
 import (
 	"encoding"
 	"fmt"
-	"net/url"
 	"reflect"
 	"strconv"
 )
@@ -21,7 +20,7 @@ func fromFieldNameToKey(f reflect.StructField) (fieldName string, required bool,
 	return
 }
 
-func Parse(dst any, values url.Values) error {
+func Parse(dst any, values map[string][]string) error {
 	dstValue := reflect.ValueOf(dst)
 	dstType := reflect.TypeOf(dst)
 
@@ -92,6 +91,7 @@ func Parse(dst any, values url.Values) error {
 	}
 	return nil
 }
+
 func parseString(dst any, s string) error {
 	dstValue := reflect.ValueOf(dst)
 	dstType := dstValue.Type()
