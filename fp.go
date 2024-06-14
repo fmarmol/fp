@@ -38,8 +38,11 @@ func Parse(dst any, values map[string][]string) error {
 			continue
 		}
 		fieldName, isRequired, defaultValue := fromFieldNameToKey(structField)
+		ptrField := reflect.New(field.Type())
 
-		if field.Kind() == reflect.Struct {
+		if field.Kind() == reflect.Struct &&
+			!field.Type().Implements(_encodingInterface) &&
+			!ptrField.Type().Implements(_encodingInterface) {
 			newPtr := reflect.New(field.Type())
 			err := Parse(newPtr.Interface(), values)
 			if err != nil {
@@ -66,6 +69,17 @@ func Parse(dst any, values map[string][]string) error {
 		if len(content) == 0 {
 			continue
 		}
+
+		// check if pointer implements encoding
+		if ptrField.Type().Implements(_encodingInterface) {
+			err := callDecoding(ptrField, content[0])
+			if err != nil {
+				return err
+			}
+			field.Set(ptrField.Elem())
+			continue
+		}
+
 		switch field.Kind() {
 		case reflect.Slice:
 			newSlice := reflect.MakeSlice(field.Type(), len(content), len(content))
@@ -92,6 +106,23 @@ func Parse(dst any, values map[string][]string) error {
 	return nil
 }
 
+func callDecoding(dst reflect.Value, s string) error {
+	method := _encodingInterface.Method(0)
+	arg := reflect.ValueOf([]byte(s))
+	res := dst.MethodByName(method.Name).Call([]reflect.Value{arg})
+	if len(res) != 1 {
+		return fmt.Errorf("encoding.UnmarshalText should return only 1 value got %d", len(res))
+	}
+	if res[0].Type() != _err {
+		return fmt.Errorf("encoding.UnmarshalText did not return an error got %v", reflect.TypeOf(res[0].Interface()))
+	}
+	if res[0].IsNil() {
+		return nil
+	}
+	return res[0].Interface().(error)
+
+}
+
 func parseString(dst any, s string) error {
 	dstValue := reflect.ValueOf(dst)
 	dstType := dstValue.Type()
@@ -103,19 +134,8 @@ func parseString(dst any, s string) error {
 	}
 
 	if dstValue.Type().Implements(_encodingInterface) {
-		method := _encodingInterface.Method(0)
-		arg := reflect.ValueOf([]byte(s))
-		res := dstValue.MethodByName(method.Name).Call([]reflect.Value{arg})
-		if len(res) != 1 {
-			return fmt.Errorf("encoding.UnmarshalText should return only 1 value got %d", len(res))
-		}
-		if res[0].Type() != _err {
-			return fmt.Errorf("encoding.UnmarshalText did not return an error got %v", reflect.TypeOf(res[0].Interface()))
-		}
-		if res[0].IsNil() {
-			return nil
-		}
-		return res[0].Interface().(error)
+		err := callDecoding(dstValue, s)
+		return err
 	}
 	switch dstValue.Elem().Kind() {
 	case reflect.String:
